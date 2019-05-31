@@ -24,6 +24,12 @@ interface IJobPair {
 }
 
 export default class RenderPDF {
+    constructor(options?: IRenderPdfOptions);
+    killChrome(): void;
+    connectToChrome(): Promise<void>;
+    generatePdfOptions(): IRenderPdfOptions;
+    renderPdf(url: string, options: IRenderPdfOptions): Promise<Buffer>;
+
     static generateSinglePdf(url: string, filename: string, options?: IRenderPdfOptions): Promise<void>;
     static generateMultiplePdf(pairs: IJobPair[], options?: IRenderPdfOptions): Promise<void>;
     static generatePdfBuffer(url: string, options?: IRenderPdfOptions): Promise<Buffer>;

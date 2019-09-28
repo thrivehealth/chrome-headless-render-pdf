@@ -343,18 +343,19 @@ class RenderPDF {
         }
     }
 
-    async waitForDebugPort() {
+    async waitForDebugPort(timeout = 30000) {
         this.log('Waiting for chrome to became available');
-        while (true) {
+        while (timeout > 0) {
             try {
                 await this.isPortOpen(this.host, this.port);
                 this.log('Chrome port open!');
-                await this.checkChromeVersion();
-                return;
+                break;
             } catch (e) {
+                timeout -= 10;
                 await this.wait(10);
             }
         }
+        await this.checkChromeVersion();
     }
 
     async checkChromeVersion() {

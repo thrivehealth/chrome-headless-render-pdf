@@ -25,7 +25,9 @@ interface IJobPair {
 
 export default class RenderPDF {
     constructor(options?: IRenderPdfOptions);
+    spawnChrome(): Promise<void>;
     killChrome(): void;
+    waitForDebugPort(timeout?: number): Promise<void>;
     connectToChrome(): Promise<void>;
     generatePdfOptions(): IRenderPdfOptions;
     renderPdf(url: string, options: IRenderPdfOptions): Promise<Buffer>;

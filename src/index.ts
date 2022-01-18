@@ -1,11 +1,39 @@
-const CDP = require('chrome-remote-interface');
-const fs = require('fs');
-const cp = require('child_process');
-const net = require('net');
-const commandExists = require('command-exists');
+import {AddressInfo} from "net";
+import {ChildProcessWithoutNullStreams} from "child_process";
+import {Protocol} from "devtools-protocol";
+
+import CDP from "chrome-remote-interface";
+import fs from "fs";
+import cp from "child_process";
+import net from "net";
+import commandExists from "command-exists";
+
+interface ConstructorOptions {
+    printLogs?: boolean;
+    printErrors?: boolean;
+    chromeBinary?: string;
+    chromeOptions?: string[];
+    remoteHost?: string;
+    remotePort?: number;
+    noMargins?: boolean;
+    landscape?: boolean;
+    includeBackground?: boolean;
+    windowSize?: [number, number];
+    paperWidth?: string;
+    paperHeight?: string;
+    pageRanges?: string;
+    scale?: number;
+    displayHeaderFooter?: boolean;
+    headerTemplate?: string;
+    footerTemplate?: string;
+}
+
+type RenderOptions = Omit<Protocol.Page.PrintToPDFRequest, 'transferMode'>;
 
 class StreamReader {
-    constructor(stream) {
+    data: string;
+
+    constructor(stream: NodeJS.ReadableStream) {
         this.data = '';
         stream.on('data', (chunk) => {
             this.data += chunk.toString();
@@ -14,39 +42,19 @@ class StreamReader {
 }
 
 class RenderPDF {
-    constructor(options) {
-        this.setOptions(options || {});
-        this.chrome = null;
+    options: ConstructorOptions;
+    commandLineOptions: { windowSize?: [number, number] };
+    chrome: ChildProcessWithoutNullStreams | null;
+    host: string;
+    port: number | undefined;
 
-        if (this.options.remoteHost) {
-          this.host = this.options.remoteHost;
-          this.port = this.options.remotePort;
-        } else {
-          this.host = 'localhost';
-        }
-    }
-
-    selectFreePort() {
-        return new Promise((resolve, reject) => {
-            const server = net.createServer({allowHalfOpen: true});
-            server.on('listening', () => {
-                const port = server.address().port;
-                server.close(() => {
-                    resolve(port);
-                });
-            });
-            server.on('error', reject);
-            server.listen();
-        })
-    }
-
-    setOptions(options) {
+    constructor(options?: ConstructorOptions) {
         this.options = {
             printLogs: def('printLogs', false),
             printErrors: def('printErrors', true),
-            chromeBinary: def('chromeBinary', null),
+            chromeBinary: def('chromeBinary', undefined),
             chromeOptions: def('chromeOptions', []),
-            remoteHost: def('remoteHost', null),
+            remoteHost: def('remoteHost', undefined),
             remotePort: def('remotePort', 9222),
             noMargins: def('noMargins', false),
             landscape: def('landscape', undefined),
@@ -64,12 +72,35 @@ class RenderPDF {
             windowSize: def('windowSize', undefined),
         };
 
-        function def(key, defaultValue) {
-            return options[key] === undefined ? defaultValue : options[key];
+        function def<K extends keyof ConstructorOptions>(key: K, defaultValue: ConstructorOptions[K]) {
+            return options?.[key] === undefined ? defaultValue : options[key];
+        }
+
+        this.chrome = null;
+
+        if (this.options.remoteHost) {
+            this.host = this.options.remoteHost;
+            this.port = this.options.remotePort;
+        } else {
+            this.host = 'localhost';
         }
     }
 
-    static async generateSinglePdf(url, filename, options) {
+    selectFreePort(): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const server = net.createServer({allowHalfOpen: true});
+            server.on('listening', () => {
+                const port = (server.address() as AddressInfo).port;
+                server.close(() => {
+                    resolve(port);
+                });
+            });
+            server.on('error', reject);
+            server.listen();
+        })
+    }
+
+    static async generateSinglePdf(url: string, filename: string, options?: ConstructorOptions) {
         const renderer = new RenderPDF(options);
         await renderer.connectToChrome();
         try {
@@ -82,7 +113,7 @@ class RenderPDF {
         renderer.killChrome();
     }
 
-    static async generatePdfBuffer(url, options) {
+    static async generatePdfBuffer(url: string, options?: ConstructorOptions) {
         const renderer = new RenderPDF(options);
         await renderer.connectToChrome();
         try {
@@ -94,7 +125,7 @@ class RenderPDF {
         }
     }
 
-    static async generateMultiplePdf(pairs, options) {
+    static async generateMultiplePdf(pairs: Array<{ url: string, pdf: string }>, options?: ConstructorOptions) {
         const renderer = new RenderPDF(options);
         await renderer.connectToChrome();
         for (const job of pairs) {
@@ -109,15 +140,15 @@ class RenderPDF {
         renderer.killChrome();
     }
 
-    async renderPdf(url, options) {
+    async renderPdf(url: string, options: RenderOptions) {
         const client = await CDP({host: this.host, port: this.port});
         this.log(`Opening ${url}`);
         const {Page, Emulation, LayerTree} = client;
         await Page.enable();
         await LayerTree.enable();
 
-        const loaded = this.cbToPromise(Page.loadEventFired);
-        const jsDone = this.cbToPromise(Emulation.virtualTimeBudgetExpired);
+        const loaded = new Promise<void>((resolve) => Page.on('loadEventFired', () => resolve()));
+        const jsDone = new Promise<void>((resolve) => Emulation.on('virtualTimeBudgetExpired', () => resolve()));
 
         await Page.navigate({url});
         await Emulation.setVirtualTimePolicy({policy: 'pauseIfNetworkFetchesPending', budget: 5000});
@@ -134,7 +165,7 @@ class RenderPDF {
             await new Promise((resolve) => {
                 setTimeout(resolve, 5000); // max waiting time
                 let timeout = setTimeout(resolve, 100);
-                LayerTree.layerPainted(() => {
+                LayerTree.on('layerPainted', () => {
                     clearTimeout(timeout);
                     timeout = setTimeout(resolve, 100);
                 });
@@ -147,8 +178,8 @@ class RenderPDF {
         return buff;
     }
 
-    generatePdfOptions() {
-        const options = {};
+    generatePdfOptions(): RenderOptions {
+        const options: RenderOptions = {};
         if (this.options.landscape !== undefined) {
             options.landscape = !!this.options.landscape;
         }
@@ -164,37 +195,37 @@ class RenderPDF {
             options.printBackground = !!this.options.includeBackground;
         }
 
-        if(this.options.paperWidth !== undefined) {
+        if (this.options.paperWidth !== undefined) {
             options.paperWidth = parseFloat(this.options.paperWidth);
         }
 
-        if(this.options.paperHeight !== undefined) {
+        if (this.options.paperHeight !== undefined) {
             options.paperHeight = parseFloat(this.options.paperHeight);
         }
 
-        if(this.options.pageRanges !== undefined) {
+        if (this.options.pageRanges !== undefined) {
             options.pageRanges = this.options.pageRanges;
         }
-      
+
         if (this.options.displayHeaderFooter !== undefined) {
             options.displayHeaderFooter = !!this.options.displayHeaderFooter;
         }
-        
+
         if (this.options.headerTemplate !== undefined) {
             options.headerTemplate = this.options.headerTemplate;
         }
-        
+
         if (this.options.footerTemplate !== undefined) {
             options.footerTemplate = this.options.footerTemplate;
         }
 
-        if(this.options.scale !== undefined) {
+        if (this.options.scale !== undefined) {
             let scale = this.options.scale;
-            if(scale < 0.1) {
+            if (scale < 0.1) {
                 console.warn(`scale cannot be lower than 0.1, using 0.1`);
                 scale = 0.1;
             }
-            if(scale > 2) {
+            if (scale > 2) {
                 console.warn(`scale cannot be higher than 2, using 2`);
                 scale = 2;
             }
@@ -204,38 +235,30 @@ class RenderPDF {
         return options;
     }
 
-    error(...msg) {
+    error(...msg: any[]) {
         if (this.options.printErrors) {
             console.error(...msg);
         }
     }
 
-    log(...msg) {
+    log(...msg: any[]) {
         if (this.options.printLogs) {
             console.log(...msg);
         }
     }
 
-    async cbToPromise(cb) {
-        return new Promise((resolve) => {
-            cb((resp) => {
-                resolve(resp);
-            })
-        });
-    }
-
-    getPerfTime(prev) {
+    getPerfTime(prev: ReturnType<typeof process.hrtime>) {
         const time = process.hrtime(prev);
         return time[0] * 1e3 + time[1] / 1e6;
     }
 
-    async profileScope(msg, cb) {
+    async profileScope(msg: string, cb: () => unknown) {
         const start = process.hrtime();
         await cb();
         this.log(msg, `took ${Math.round(this.getPerfTime(start))}ms`);
     }
 
-    browserLog(type, msg) {
+    browserLog(type: string, msg: string) {
         const lines = msg.split('\n');
         for (const line of lines) {
             this.log(`(chrome) (${type}) ${line}`);
@@ -243,44 +266,45 @@ class RenderPDF {
     }
 
     async spawnChrome() {
-        if(!this.port) {
+        if (!this.port) {
             this.port = await this.selectFreePort();
         }
         const chromeExec = this.options.chromeBinary || await this.detectChrome();
         this.log('Using', chromeExec);
         const commandLineOptions = [
-             '--headless',
-             `--remote-debugging-port=${this.port}`,
-             '--disable-gpu',
-             ...this.options.chromeOptions
-            ];
+            '--headless',
+            `--remote-debugging-port=${this.port}`,
+            '--disable-gpu',
+            ...this.options.chromeOptions!
+        ];
 
-        if (this.commandLineOptions.windowSize !== undefined ) {
-          commandLineOptions.push(`--window-size=${this.commandLineOptions.windowSize[0]},${this.commandLineOptions.windowSize[1]}`);
+        if (this.commandLineOptions.windowSize !== undefined) {
+            commandLineOptions.push(`--window-size=${this.commandLineOptions.windowSize[0]},${this.commandLineOptions.windowSize[1]}`);
 
         }
-        this.chrome = cp.spawn(
+        const chrome = cp.spawn(
             chromeExec,
             commandLineOptions
         );
-        const stdout = new StreamReader(this.chrome.stdout);
-        const stderr = new StreamReader(this.chrome.stderr);
-        this.chrome.on('close', (code) => {
+        const stdout = new StreamReader(chrome.stdout);
+        const stderr = new StreamReader(chrome.stderr);
+        chrome.on('close', (code: number) => {
             this.log(`Chrome stopped (${code})`);
             this.browserLog('out', stdout.data);
             this.browserLog('err', stderr.data);
         });
+        this.chrome = chrome;
     }
 
     async connectToChrome() {
-      if (!this.options.remoteHost) {
-        await this.spawnChrome();
-      }
+        if (!this.options.remoteHost) {
+            await this.spawnChrome();
+        }
 
-      await this.waitForDebugPort();
+        await this.waitForDebugPort();
     }
 
-    async isCommandExists(cmd) {
+    async isCommandExists(cmd: string): Promise<boolean> {
         return new Promise((resolve, reject) => {
             commandExists(cmd, (err, exists) => {
                 if (err) {
@@ -339,7 +363,7 @@ class RenderPDF {
 
     killChrome() {
         if (!this.options.remoteHost) {
-            this.chrome.kill(cp.SIGKILL);
+            this.chrome!.kill('SIGKILL');
         }
     }
 
@@ -347,7 +371,7 @@ class RenderPDF {
         this.log('Waiting for chrome to became available');
         while (timeout > 0) {
             try {
-                await this.isPortOpen(this.host, this.port);
+                await this.isPortOpen(this.host, this.port!);
                 this.log('Chrome port open!');
                 break;
             } catch (e) {
@@ -376,7 +400,7 @@ class RenderPDF {
         }
     }
 
-    async isPortOpen(host, port) {
+    async isPortOpen(host: string, port: number): Promise<void> {
         return new Promise(function (resolve, reject) {
             const connection = new net.Socket();
             connection.connect({host, port});
@@ -390,12 +414,12 @@ class RenderPDF {
         });
     }
 
-    async wait(ms) {
+    async wait(ms: number): Promise<void> {
         return new Promise((resolve) => {
             setTimeout(resolve, ms);
         });
     }
 }
 
-module.exports = RenderPDF;
-module.exports.default = RenderPDF;
+export {RenderPDF};
+export default RenderPDF;

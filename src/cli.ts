@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
-const RenderPDF = require('../index');
-const argv = require('minimist')(process.argv.slice(2), {
+import {RenderPDF} from "./index";
+import minimist from "minimist";
+
+const argv = minimist(process.argv.slice(2), {
     string: [
         'url',
         'pdf',
@@ -33,17 +35,16 @@ if (argv['help'] || !argv['pdf'] || !argv['url']) {
 const urls = typeof argv['url'] === 'string' ? [argv['url']] : argv['url'];
 const pdfs = typeof argv['pdf'] === 'string' ? [argv['pdf']] : argv['pdf'];
 
-let windowSize;
+let windowSize: [number, number] | undefined;
 if (typeof argv['window-size'] === 'string') {
-    windowSize = argv['window-size'].match(/^([0-9]+)[,x*]([0-9]+)$/);
-    if (windowSize === null) {
+    const match = argv['window-size'].match(/^([0-9]+)[,x*]([0-9]+)$/);
+    if (match === null) {
       console.error('ERROR: Missing or bad input for --window-size \n');
       printHelp();
       process.exit(1);
     }
-    windowSize = windowSize.splice(1,3);
+    windowSize = [parseInt(match[1], 10), parseInt(match[2], 10)];
 }
-
 
 if (pdfs.length !== urls.length) {
     console.error('ERROR: Unpaired --url or --pdf found\n');
@@ -51,7 +52,7 @@ if (pdfs.length !== urls.length) {
     process.exit(1);
 }
 
-let chromeBinary = null;
+let chromeBinary = undefined;
 if (typeof argv['chrome-binary'] === 'string') {
     chromeBinary = argv['chrome-binary'];
 }
@@ -63,12 +64,14 @@ if (Array.isArray(argv['chrome-option'])) {
   chromeOptions = [argv['chrome-option']];
 }
 
-let [remoteHost, remotePort] = [undefined, undefined];
+let remoteHost = undefined;
 if (typeof argv['remote-host'] === 'string') {
     remoteHost = argv['remote-host'];
 }
+
+let remotePort = undefined;
 if (typeof argv['remote-port'] === 'string') {
-    remotePort = argv['remote-port'];
+    remotePort = parseInt(argv['remote-port'], 10);
 }
 
 let paperWidth = undefined;
@@ -154,7 +157,7 @@ if(typeof argv['footer-template'] === 'string') {
 })();
 
 
-function generateJobList(urls, pdfs) {
+function generateJobList(urls: string[], pdfs: string[]) {
     const jobs = [];
     for (let j = 0; j < urls.length; j++) {
         jobs.push({

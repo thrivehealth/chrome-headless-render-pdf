@@ -26,6 +26,8 @@ interface ConstructorOptions {
     displayHeaderFooter?: boolean;
     headerTemplate?: string;
     footerTemplate?: string;
+    jsTimeBudget?: number;
+    animationTimeBudget?: number;
 }
 
 type RenderOptions = Omit<Protocol.Page.PrintToPDFRequest, 'transferMode'>;
@@ -66,6 +68,8 @@ class RenderPDF {
             displayHeaderFooter: def('displayHeaderFooter', false),
             headerTemplate: def('headerTemplate', undefined),
             footerTemplate: def('footerTemplate', undefined),
+            jsTimeBudget: def('jsTimeBudget', 5000),
+            animationTimeBudget: def('animationTimeBudget', 5000),
         };
 
         this.commandLineOptions = {
@@ -162,7 +166,7 @@ class RenderPDF {
             const jsDone = new Promise<void>((resolve) => Emulation.on('virtualTimeBudgetExpired', () => resolve()));
 
             await Page.navigate({url});
-            await Emulation.setVirtualTimePolicy({policy: 'pauseIfNetworkFetchesPending', budget: 5000});
+            await Emulation.setVirtualTimePolicy({policy: 'pauseIfNetworkFetchesPending', budget: this.options.jsTimeBudget});
 
             await this.profileScope('Wait for load', async () => {
                 await loaded;
@@ -175,7 +179,7 @@ class RenderPDF {
             await this.profileScope('Wait for animations', async () => {
                 let maxTimeout;
                 await new Promise((resolve) => {
-                    maxTimeout = setTimeout(resolve, 5000); // max waiting time
+                    maxTimeout = setTimeout(resolve, this.options.animationTimeBudget); // max waiting time
                     let timeout = setTimeout(resolve, 100);
                     LayerTree.on('layerPainted', () => {
                         clearTimeout(timeout);

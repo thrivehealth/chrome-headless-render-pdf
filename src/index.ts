@@ -382,6 +382,15 @@ class RenderPDF {
                 await this.wait(10);
             }
         }
+        while (timeout > 0) {
+            try {
+                await this.checkChromeVersion();
+                return;
+            } catch (e) {
+                timeout -= 10;
+                await this.wait(10);
+            }
+        }
         await this.checkChromeVersion();
     }
 

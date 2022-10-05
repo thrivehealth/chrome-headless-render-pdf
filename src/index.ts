@@ -142,40 +142,43 @@ class RenderPDF {
 
     async renderPdf(url: string, options: RenderOptions) {
         const client = await CDP({host: this.host, port: this.port});
-        this.log(`Opening ${url}`);
-        const {Page, Emulation, LayerTree} = client;
-        await Page.enable();
-        await LayerTree.enable();
+        try {
+            this.log(`Opening ${url}`);
+            const {Page, Emulation, LayerTree} = client;
+            await Page.enable();
+            await LayerTree.enable();
 
-        const loaded = new Promise<void>((resolve) => Page.on('loadEventFired', () => resolve()));
-        const jsDone = new Promise<void>((resolve) => Emulation.on('virtualTimeBudgetExpired', () => resolve()));
+            const loaded = new Promise<void>((resolve) => Page.on('loadEventFired', () => resolve()));
+            const jsDone = new Promise<void>((resolve) => Emulation.on('virtualTimeBudgetExpired', () => resolve()));
 
-        await Page.navigate({url});
-        await Emulation.setVirtualTimePolicy({policy: 'pauseIfNetworkFetchesPending', budget: 5000});
+            await Page.navigate({url});
+            await Emulation.setVirtualTimePolicy({policy: 'pauseIfNetworkFetchesPending', budget: 5000});
 
-        await this.profileScope('Wait for load', async () => {
-            await loaded;
-        });
+            await this.profileScope('Wait for load', async () => {
+                await loaded;
+            });
 
-        await this.profileScope('Wait for js execution', async () => {
-            await jsDone;
-        });
+            await this.profileScope('Wait for js execution', async () => {
+                await jsDone;
+            });
 
-        await this.profileScope('Wait for animations', async () => {
-            await new Promise((resolve) => {
-                setTimeout(resolve, 5000); // max waiting time
-                let timeout = setTimeout(resolve, 100);
-                LayerTree.on('layerPainted', () => {
-                    clearTimeout(timeout);
-                    timeout = setTimeout(resolve, 100);
+            await this.profileScope('Wait for animations', async () => {
+                await new Promise((resolve) => {
+                    setTimeout(resolve, 5000); // max waiting time
+                    let timeout = setTimeout(resolve, 100);
+                    LayerTree.on('layerPainted', () => {
+                        clearTimeout(timeout);
+                        timeout = setTimeout(resolve, 100);
+                    });
                 });
             });
-        });
 
-        const pdf = await Page.printToPDF(options);
-        const buff = Buffer.from(pdf.data, 'base64');
-        client.close();
-        return buff;
+            const pdf = await Page.printToPDF(options);
+            const buff = Buffer.from(pdf.data, 'base64');
+            return buff;
+        } finally {
+            client.close();
+        }
     }
 
     generatePdfOptions(): RenderOptions {
@@ -385,18 +388,22 @@ class RenderPDF {
     async checkChromeVersion() {
         const client = await CDP({host: this.host, port: this.port});
         try {
-            const {Browser} = client;
-            const version = await Browser.getVersion();
-            if (version.product.search('/64.') !== -1) {
-                this.error('     ===== WARNING =====');
-                this.error('  Detected Chrome in version 64.x');
-                this.error('  This version is known to contain bug in remote api that prevents this tool to work');
-                this.error('  This issue is resolved in version 65');
-                this.error('  More info: https://github.com/Szpadel/chrome-headless-render-pdf/issues/22');
+            try {
+                const {Browser} = client;
+                const version = await Browser.getVersion();
+                if (version.product.search('/64.') !== -1) {
+                    this.error('     ===== WARNING =====');
+                    this.error('  Detected Chrome in version 64.x');
+                    this.error('  This version is known to contain bug in remote api that prevents this tool to work');
+                    this.error('  This issue is resolved in version 65');
+                    this.error('  More info: https://github.com/Szpadel/chrome-headless-render-pdf/issues/22');
+                }
+                this.log(`Connected to ${version.product}, protocol ${version.protocolVersion}`);
+            } catch (e) {
+                this.error(`Wasn't able to check chrome version, skipping compatibility check.`);
             }
-            this.log(`Connected to ${version.product}, protocol ${version.protocolVersion}`);
-        } catch (e) {
-            this.error(`Wasn't able to check chrome version, skipping compatibility check.`);
+        } finally {
+            client.close();
         }
     }
 

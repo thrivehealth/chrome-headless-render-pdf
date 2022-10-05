@@ -1,6 +1,6 @@
 {
   "name": "@newhippo/chrome-headless-render-pdf",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "repository": "https://github.com/thrivehealth/chrome-headless-render-pdf",
   "license": "MIT",
   "main": "dist/index.js",

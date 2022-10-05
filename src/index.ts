@@ -163,14 +163,16 @@ class RenderPDF {
             });
 
             await this.profileScope('Wait for animations', async () => {
+                let maxTimeout;
                 await new Promise((resolve) => {
-                    setTimeout(resolve, 5000); // max waiting time
+                    maxTimeout = setTimeout(resolve, 5000); // max waiting time
                     let timeout = setTimeout(resolve, 100);
                     LayerTree.on('layerPainted', () => {
                         clearTimeout(timeout);
                         timeout = setTimeout(resolve, 100);
                     });
                 });
+                clearTimeout(maxTimeout);
             });
 
             const pdf = await Page.printToPDF(options);

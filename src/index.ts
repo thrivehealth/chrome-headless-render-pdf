@@ -290,7 +290,8 @@ class RenderPDF {
             '--headless',
             `--remote-debugging-port=${this.port}`,
             '--disable-gpu',
-            ...this.options.chromeOptions!
+            ...this.options.chromeOptions!,
+            'about:blank'
         ];
 
         if (this.commandLineOptions.windowSize !== undefined) {

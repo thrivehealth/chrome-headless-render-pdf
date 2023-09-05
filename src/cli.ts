@@ -26,6 +26,7 @@ const argv = minimist(process.argv.slice(2), {
         'include-background',
         'landscape',
         'display-header-footer',
+        'prefer-css-page-size',
     ]
 });
 
@@ -84,6 +85,11 @@ if (typeof argv['paper-width'] === 'string') {
 let paperHeight = undefined;
 if (typeof argv['paper-height'] === 'string') {
     paperHeight = argv['paper-height'];
+}
+
+let preferCSSPageSize = undefined;
+if (argv['prefer-css-page-size']) {
+    preferCSSPageSize = true;
 }
 
 let landscape;
@@ -163,6 +169,7 @@ if(typeof argv['animation-time-budget'] === 'string') {
             windowSize,
             paperWidth,
             paperHeight,
+            preferCSSPageSize,
             pageRanges,
             scale,
             displayHeaderFooter,
@@ -206,6 +213,7 @@ function printHelp() {
     console.log('    --window-size            specify window size, width(,x*)height (e.g. --window-size 1600,1200 or --window-size 1600x1200)');
     console.log('    --paper-width            specify page width in inches (defaults to 8.5 inches)');
     console.log('    --paper-height           specify page height in inches (defaults to 11 inches)');
+    console.log('    --prefer-css-page-size   respect CSS specified @page size');
     console.log('    --page-ranges            specify pages to render default all pages,  e.g. 1-5, 8, 11-13');
     console.log('    --scale                  specify scale of the webpage rendering (defaults to 1)');
     console.log('    --display-header-footer  display text headers and footers');

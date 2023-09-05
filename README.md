@@ -16,6 +16,7 @@ chrome-headless-render-pdf [OPTIONS] --url=URL --pdf=OUTPUT-FILE [--url=URL2 --p
     --window-size            specify window size, width(,x*)height (e.g. --window-size 1600,1200 or --window-size 1600x1200)
     --paper-width            specify page width in inches (defaults to 8.5 inches)
     --paper-height           specify page height in inches (defaults to 11 inches)
+    --prefer-css-page-size   respect CSS specified @page size
     --page-ranges            specify pages to render default all pages,  e.g. 1-5, 8, 11-13
     --scale                  specify scale of the webpage rendering (defaults to 1)
     --display-header-footer  display text headers and footers

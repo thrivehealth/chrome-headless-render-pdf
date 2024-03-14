@@ -23,7 +23,7 @@
     "@types/node": "^14.0.24",
     "chrome-remote-interface": "^0.31.1",
     "command-exists": "^1.2.9",
-    "minimist": "^1.2.3"
+    "minimist": "^1.2.6"
   },
   "devDependencies": {
     "typescript": "^4.5.4"

@@ -144,9 +144,19 @@ class RenderPDF {
         const client = await CDP({host: this.host, port: this.port});
         try {
             this.log(`Opening ${url}`);
-            const {Page, Emulation, LayerTree} = client;
+            const {Page, Emulation, LayerTree, Runtime} = client;
             await Page.enable();
             await LayerTree.enable();
+            await Runtime.enable();
+
+            if (this.options.printLogs) {
+                Runtime.on('consoleAPICalled', (event) => {
+                    console.log(`Page console.${event.type}`, event.args)
+                });
+                Runtime.on('exceptionThrown', (event) => {
+                    console.log('Page threw exception', event.exceptionDetails);
+                });
+            }
 
             const loaded = new Promise<void>((resolve) => Page.on('loadEventFired', () => resolve()));
             const jsDone = new Promise<void>((resolve) => Emulation.on('virtualTimeBudgetExpired', () => resolve()));

@@ -44,6 +44,10 @@ class StreamReader {
     }
 }
 
+interface ThriveRenderPDFOptions {
+    delayUntilThriveEventFires?: boolean;
+}
+
 class RenderPDF {
     options: ConstructorOptions;
     commandLineOptions: { windowSize?: [number, number] };
@@ -146,7 +150,7 @@ class RenderPDF {
         renderer.killChrome();
     }
 
-    async renderPdf(url: string, options: RenderOptions) {
+    async renderPdf(url: string, options: RenderOptions & ThriveRenderPDFOptions) {
         const client = await CDP({host: this.host, port: this.port});
         try {
             this.log(`Opening ${url}`);
@@ -165,9 +169,20 @@ class RenderPDF {
             }
 
             const loaded = new Promise<void>((resolve) => Page.on('loadEventFired', () => resolve()));
-            const jsDone = new Promise<void>((resolve) => Emulation.on('virtualTimeBudgetExpired', () => resolve()));
 
             await Page.navigate({url});
+            let jsDone: Promise<void> | ReturnType<typeof Runtime.evaluate>;
+            if (options.delayUntilThriveEventFires) {
+                jsDone = Runtime.evaluate({
+                    awaitPromise: true,
+                    expression: `
+                        new Promise((resolve, reject) => {
+                            window.addEventListener('thrive.jsdone', resolve, { once: true });
+                        })`,
+                    });
+            } else {
+                jsDone = new Promise<void>((resolve) => Emulation.on('virtualTimeBudgetExpired', async () => resolve()));
+            }
             await Emulation.setVirtualTimePolicy({policy: 'pauseIfNetworkFetchesPending', budget: this.options.jsTimeBudget});
 
             await this.profileScope('Wait for load', async () => {

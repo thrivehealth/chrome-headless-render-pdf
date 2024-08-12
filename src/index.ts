@@ -154,10 +154,43 @@ class RenderPDF {
         const client = await CDP({host: this.host, port: this.port});
         try {
             this.log(`Opening ${url}`);
-            const {Page, Emulation, LayerTree, Runtime} = client;
+            const {Page, Emulation, LayerTree, Runtime, Network, Tracing} = client;
             await Page.enable();
             await LayerTree.enable();
             await Runtime.enable();
+            await Network.enable({})
+            await Tracing.start({"traceConfig": {
+                "includedCategories": [
+                    "-*",
+                    "devtools.timeline",
+                    "v8.execute",
+                    "disabled-by-default-devtools.timeline",
+                    "disabled-by-default-devtools.timeline.frame",
+                    "toplevel",
+                    "blink.console",
+                    "blink.user_timing",
+                    "latencyInfo",
+                    "disabled-by-default-devtools.timeline",
+                    "disabled-by-default-devtools.timeline.frame",
+                    "disabled-by-default-devtools.timeline.stack",
+                    "disabled-by-default-devtools.screenshot",
+                    "disabled-by-default-v8.cpu_profiler"
+                ],
+                "excludedCategories": ["-*"]
+                }
+            });
+            const traces: any[] = [];
+            let resolveWaitForMe: any;
+            const waitForMe = new Promise((resolve, reject) => {resolveWaitForMe = resolve});
+            Tracing.on('dataCollected', (e) => {
+                traces.push(...e.value);
+            })
+            Tracing.on('tracingComplete', (e) => {
+                console.log('attempting to write traces to file');
+                console.log(traces);
+                fs.writeFileSync('./results.json', JSON.stringify({ "traceEvents": traces }), 'utf-8');
+                resolveWaitForMe();
+            })
 
             if (this.options.printLogs) {
                 Runtime.on('consoleAPICalled', (event) => {
@@ -166,6 +199,12 @@ class RenderPDF {
                 Runtime.on('exceptionThrown', (event) => {
                     console.log('Page threw exception', event.exceptionDetails);
                 });
+                Network.on('loadingFinished', (e) => {
+                    console.log('Local: loadingFinished', e);
+                })
+                Network.on('requestWillBeSent', (e) => {
+                    console.log('Local: requestWillBeSent', e);
+                })
             }
 
             const loaded = new Promise<void>((resolve) => Page.on('loadEventFired', () => resolve()));
@@ -208,6 +247,9 @@ class RenderPDF {
 
             const pdf = await Page.printToPDF(options);
             const buff = Buffer.from(pdf.data, 'base64');
+            
+            await Tracing.end();
+            await waitForMe;
             return buff;
         } finally {
             client.close();

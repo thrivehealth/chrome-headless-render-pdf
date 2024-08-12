@@ -29,6 +29,7 @@ interface ConstructorOptions {
     footerTemplate?: string;
     jsTimeBudget?: number;
     animationTimeBudget?: number;
+    traceFilename?: string;
 }
 
 type RenderOptions = Omit<Protocol.Page.PrintToPDFRequest, 'transferMode'>;
@@ -46,6 +47,21 @@ class StreamReader {
 
 interface ThriveRenderPDFOptions {
     delayUntilThriveEventFires?: boolean;
+}
+
+interface Deferred<T> {
+    promise: Promise<T>;
+    resolve: (value: T | PromiseLike<T>) => void;
+    reject: (err: any) => void;
+}
+
+function defer<T>(): Deferred<T> {
+    const result = {} as Deferred<T>;
+    result.promise = new Promise((resolve, reject) => {
+        result.resolve = resolve;
+        result.reject = reject;
+    })
+    return result;
 }
 
 class RenderPDF {
@@ -76,6 +92,7 @@ class RenderPDF {
             footerTemplate: def('footerTemplate', undefined),
             jsTimeBudget: def('jsTimeBudget', 5000),
             animationTimeBudget: def('animationTimeBudget', 5000),
+            traceFilename: def('traceFilename', undefined),
         };
 
         this.commandLineOptions = {
@@ -154,10 +171,46 @@ class RenderPDF {
         const client = await CDP({host: this.host, port: this.port});
         try {
             this.log(`Opening ${url}`);
-            const {Page, Emulation, LayerTree, Runtime} = client;
+            const {Page, Emulation, LayerTree, Runtime, Tracing} = client;
             await Page.enable();
             await LayerTree.enable();
             await Runtime.enable();
+
+            const traceFilename = this.options.traceFilename;
+            const traceFileWritten = defer<void>();
+            if (traceFilename) {
+                await Tracing.start({
+                    "traceConfig": {
+                        "includedCategories": [
+                            "-*",
+                            "devtools.timeline",
+                            "v8.execute",
+                            "disabled-by-default-devtools.timeline",
+                            "disabled-by-default-devtools.timeline.frame",
+                            "toplevel",
+                            "blink.console",
+                            "blink.user_timing",
+                            "latencyInfo",
+                            "disabled-by-default-devtools.timeline",
+                            "disabled-by-default-devtools.timeline.frame",
+                            "disabled-by-default-devtools.timeline.stack",
+                            "disabled-by-default-devtools.screenshot",
+                            "disabled-by-default-v8.cpu_profiler"
+                        ],
+                        "excludedCategories": ["-*"]
+                    }
+                });
+
+                const traces: unknown[] = [];
+                Tracing.on('dataCollected', (e) => {
+                    traces.push(...e.value);
+                })
+                Tracing.on('tracingComplete', (e) => {
+                    this.log(`Writing traces to ${traceFilename}`);
+                    fs.writeFileSync(traceFilename, JSON.stringify({ "traceEvents": traces }), 'utf-8')
+                    traceFileWritten.resolve();
+                })
+            }
 
             if (this.options.printLogs) {
                 Runtime.on('consoleAPICalled', (event) => {
@@ -208,6 +261,11 @@ class RenderPDF {
 
             const pdf = await Page.printToPDF(options);
             const buff = Buffer.from(pdf.data, 'base64');
+
+            if (this.options.traceFilename) {
+                await Tracing.end();
+                await traceFileWritten.promise;
+            }
             return buff;
         } finally {
             client.close();

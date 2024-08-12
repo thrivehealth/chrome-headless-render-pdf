@@ -30,6 +30,7 @@ interface ConstructorOptions {
     jsTimeBudget?: number;
     animationTimeBudget?: number;
     traceFilename?: string;
+    logNetworkRequests?: boolean;
 }
 
 type RenderOptions = Omit<Protocol.Page.PrintToPDFRequest, 'transferMode'>;
@@ -93,6 +94,7 @@ class RenderPDF {
             jsTimeBudget: def('jsTimeBudget', 5000),
             animationTimeBudget: def('animationTimeBudget', 5000),
             traceFilename: def('traceFilename', undefined),
+            logNetworkRequests: def('logNetworkRequests', false),
         };
 
         this.commandLineOptions = {
@@ -171,7 +173,7 @@ class RenderPDF {
         const client = await CDP({host: this.host, port: this.port});
         try {
             this.log(`Opening ${url}`);
-            const {Page, Emulation, LayerTree, Runtime, Tracing} = client;
+            const {Page, Emulation, LayerTree, Runtime, Tracing, Network} = client;
             await Page.enable();
             await LayerTree.enable();
             await Runtime.enable();
@@ -219,6 +221,21 @@ class RenderPDF {
                 Runtime.on('exceptionThrown', (event) => {
                     console.log('Page threw exception', event.exceptionDetails);
                 });
+            }
+
+            if (this.options.logNetworkRequests) {
+                await Network.enable({});
+
+                const startTimes = new Map<string, number>()
+                Network.on('requestWillBeSent', (e) => {
+                    startTimes.set(e.requestId, e.timestamp);
+                    console.log('Request for', e.request.url);
+                })
+                Network.on('responseReceived', (e) => {
+                    const duration = e.timestamp - startTimes.get(e.requestId)!;
+                    const durationMs = Math.round(duration * 1000 * 1000) / 1000;
+                    console.log('Response for', e.response.url, `(status=${e.response.status}; duration=${durationMs}ms)`);
+                })
             }
 
             const loaded = new Promise<void>((resolve) => Page.on('loadEventFired', () => resolve()));

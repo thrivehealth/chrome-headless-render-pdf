@@ -20,6 +20,7 @@ const argv = minimist(process.argv.slice(2), {
         'footer-template',
         'js-time-budget',
         'animation-time-budget',
+        'trace-filename',
     ],
     boolean: [
         'no-margins',
@@ -154,6 +155,11 @@ if(typeof argv['animation-time-budget'] === 'string') {
     }
 }
 
+let traceFilename;
+if(typeof argv['trace-filename'] === 'string') {
+    traceFilename = argv['trace-filename'];
+}
+
 (async () => {
     try {
         const jobs = generateJobList(urls, pdfs);
@@ -177,6 +183,7 @@ if(typeof argv['animation-time-budget'] === 'string') {
             footerTemplate,
             jsTimeBudget,
             animationTimeBudget,
+            traceFilename,
         });
     } catch (e) {
         console.error(e);
@@ -221,6 +228,7 @@ function printHelp() {
     console.log('    --footerTemplate         HTML template for the footer. Inject variables using the classes "date", "title", "url", "pageNumber" or "totalPages"');
     console.log('    --js-time-budget         Virtual time budget in ms to wait for js execution (default 5000)');
     console.log('    --animation-time-budget  Time budget in ms to wait for in progress animations to finish (default 5000)');
+    console.log('    --trace-filename         enable tracing and write output to specified file');
     console.log('');
     console.log('  Example:');
     console.log('    Render single pdf file');
